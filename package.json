@@ -1,7 +1,7 @@
 {
   "name": "dsh-opencodego-multikey",
-  "description": "OpenCode Go multi-key gateway for DSH: (Multikey) models route through a load-balanced API-key pool; usage shown by dsh-usage-stats",
-  "version": "0.4.0",
+  "description": "OpenCode Go multi-key gateway for DSH: a dedicated 'OpenCode Go Multikey' provider load-balances an API-key pool; usage shown by dsh-usage-stats",
+  "version": "0.5.0",
   "private": true,
   "keywords": [
     "deepseek",

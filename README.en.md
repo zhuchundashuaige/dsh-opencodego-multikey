@@ -12,10 +12,10 @@ An **OpenCode Go multi-API-key gateway plugin** for the [DeepSeek Harness](https
 
 DSH ships an `opencode-go` provider that only allows **one** API key per route. This plugin runs a local reverse proxy that folds many keys into **one pool**:
 
-- **"Multikey" models**: on load it adds a `（Multikey）` variant of every `opencode-go` model (e.g. `minimax-m3 (Multikey)`) to the Model dropdown and points the provider baseURL at the local proxy; picking one **load-balances** the key pool automatically;
+- **Dedicated provider "OpenCode Go Multikey"**: on load the plugin adds a new provider route `opencode-go-multikey` (display name `OpenCode Go Multikey`) whose models are identical to `OpenCode Go` and whose api key can be anything, with baseURL pointed at the local proxy; picking any of its models **load-balances** the key pool automatically;
 - **Multi-key management**: add / remove / enable / disable any number of API keys on **Settings → OpenCodeGo Multi-Key**;
 - **Quota-aware scheduling**: every request automatically uses the key with the most remaining quota; ties are round-robined; nearly-exhausted / invalid / rate-limited keys are skipped and quarantined, then recover when the quarantine lapses;
-- **Usage shown by dsh-usage-stats**: the plugin draws no usage panel — per-"Multikey"-model pool usage is displayed by [dsh-usage-stats](https://github.com/Ychris12138/dsh-usage-stats).
+- **Usage shown by dsh-usage-stats**: the plugin draws no usage panel. Because "OpenCode Go Multikey" is a dedicated provider, [dsh-usage-stats](https://github.com/Ychris12138/dsh-usage-stats) can aggregate the pool's usage cleanly under that provider.
 
 ---
 
@@ -23,14 +23,14 @@ DSH ships an `opencode-go` provider that only allows **one** API key per route. 
 
 | Capability | Description |
 | --- | --- |
-| Local reverse proxy | Listens on `127.0.0.1:19781` (configurable); forwards OpenAI / Anthropic requests verbatim, only swapping `Authorization` and stripping the `（Multikey）` suffix |
-| Multikey model injection | On load, pins the `opencode-go` baseURL to the proxy and adds a `（Multikey）` variant of every model (disable-able) |
+| Local reverse proxy | Listens on `127.0.0.1:19781` (configurable); forwards OpenAI / Anthropic requests verbatim, only swapping `Authorization` |
+| Dedicated provider injection | On load, adds the `opencode-go-multikey` provider ("OpenCode Go Multikey", models identical to opencode-go, any api key) with baseURL at the proxy; cleans legacy `（Multikey）` model variants |
 | Smart key selection | Highest remaining quota first (monthly > weekly > rolling); unknown quota joins neutrally; ties round-robin |
 | Auto-quarantine | 401/403 for 10 min, 429 for 1 min, transient network for 30 s (configurable); manually clearable |
 | Low-quota model downgrade (optional) | e.g. `qwen3.7-max → qwen3.7-plus`; never downgrades under an unknown quota |
 | Entry point | **Settings menu only** (Settings → OpenCodeGo Multi-Key); no sidebar badge |
-| Usage display | By dsh-usage-stats per `（Multikey）` / custom model (no usage panel of its own) |
-| Bilingual | Settings page and README are zh/en bilingual |
+| Usage display | By dsh-usage-stats per "OpenCode Go Multikey" model (no usage panel of its own) |
+| Bilingual | Settings page and README are zh/en bilingual (README.md + README.en.md switchable) |
 | Persistence | State stored at `<DSH_HOME>/storages/opencodego-multikey.json` |
 | Security | Proxy and management API are loopback-only; every view shows masked keys |
 
@@ -79,7 +79,7 @@ or run the installer from this repository:
 node scripts/install.mjs
 ```
 
-After installing, **restart `dsh web`** once (the host-side baseURL + `（Multikey）` model injection needs the new code), then **hard-refresh** the browser (Ctrl+Shift+R).
+After installing, **restart `dsh web`** once (the host-side "OpenCode Go Multikey" provider injection needs the new code), then **hard-refresh** the browser (Ctrl+Shift+R).
 
 ### Hot reload during development
 
@@ -100,22 +100,21 @@ The client bundle is served with `no-cache` and re-hashed: after editing `lib/cl
 
 On load the plugin auto-writes (via the `settings` service, idempotently):
 
-- `opencode-go` provider `baseURL = http://127.0.0.1:{listenPort}` (the local proxy);
-- a `（Multikey）` variant of every listed opencode-go model (`id + " (Multikey)"`, inheriting name/contextWindow/maxTokens).
+- Adds a **dedicated provider** `opencode-go-multikey` (display name `OpenCode Go Multikey`): models identical to `opencode-go`, `api` and `apiKeyEnv` inherited (any api key), `baseURL = http://127.0.0.1:{listenPort}` (the local proxy);
+- Cleans any legacy `（Multikey）` model variants from the `opencode-go` provider (its models and baseURL are left as-is).
 
-`apiKeyEnv` is left as-is (it only satisfies DSH's config validation — the proxy ignores the inbound credential and uses the Key pool).
+So the Model dropdown gains a full "OpenCode Go Multikey" set of models — picking any routes the request through the pool load-balancer. The `apiKeyEnv` value only satisfies DSH's config validation; the proxy ignores the inbound credential and uses the Key pool, which also lets dsh-usage-stats aggregate usage neatly under this dedicated provider.
 
-To manage by hand, set `injectProvider: false` in the plugin `config`, point the `opencode-go` baseURL at
-`http://127.0.0.1:{listenPort}` yourself, and add `（Multikey）` models manually.
+To manage by hand, set `injectProvider: false`, create the provider yourself with its baseURL at the proxy, and manage the models manually.
 
 ---
 
 ## Usage
 
-1. In the Model dropdown pick a **`（Multikey）`** model (e.g. `minimax-m3 (Multikey)`) — calls automatically load-balance the key pool.
+1. In the Model dropdown pick a model under the **"OpenCode Go Multikey"** provider (e.g. `minimax-m3`) — calls automatically load-balance the key pool.
 2. Open **Settings → OpenCodeGo Multi-Key**, paste an OpenCode Go API key (optional label), hit **Add**. The plugin probes its quota immediately and auto-refreshes every 60 s. Each key card shows status (active / quarantined / disabled) and the rolling / weekly / monthly quota bars (used % + reset time).
 3. Disable / delete a key, or un-quarantine a key that was auto-isolated.
-4. **View aggregate usage** with [dsh-usage-stats](https://github.com/Ychris12138/dsh-usage-stats): open the sidebar "Usage & Balance", where each `（Multikey）` model shows the pooled usage.
+4. **View aggregate usage** with [dsh-usage-stats](https://github.com/Ychris12138/dsh-usage-stats): open the sidebar "Usage & Balance" and see each "OpenCode Go Multikey" model's pooled usage.
 
 ### Scheduling rules
 
@@ -124,7 +123,7 @@ To manage by hand, set `injectProvider: false` in the plugin `config`, point the
 - Keys with unknown quota compete with a neutral score (50).
 - Quota ≤ `exhaustThresholdPct` (default 2%) counts as exhausted and is skipped.
 - Equal score → least-recently-picked wins (round-robin).
-- A `（Multikey）` model id is normalized (suffix stripped) before fallback lookup and forwarding, so `fallbacks` match the underlying model name.
+- `fallbacks` match the model's real id (the supplier's model ids equal opencode-go's).
 
 ### Model downgrade (optional)
 
@@ -159,10 +158,13 @@ All passed via the `config` of the `opencodego-multikey` row (all optional; defa
 | `quarantineNetworkMs` | `30000` | Transient-network quarantine |
 | `historyDays` | `90` | Daily-detail retention days |
 | `stateFile` | `<DSH_HOME>/storages/opencodego-multikey.json` | State file |
-| `providerRoute` | `opencode-go` | Provider route (under `llm-pi-ai.providers`) to inject Multikey models into |
-| `proxyBaseURL` | `http://127.0.0.1:{listenPort}` | Proxy base URL pinned onto the route |
-| `injectProvider` | `true` | Auto-write baseURL + Multikey models into llm-pi-ai on load |
-| `multikeySuffix` | `" (Multikey)"` | Suffix appended to injected model ids |
+| `sourceRoute` | `opencode-go` | Source provider route whose models/api are mirrored |
+| `newProviderRoute` | `opencode-go-multikey` | New dedicated provider route id (under `llm-pi-ai.providers`) |
+| `newProviderDisplayName` | `OpenCode Go Multikey` | Display name of the new provider |
+| `proxyBaseURL` | `http://127.0.0.1:{listenPort}` | Proxy base URL pinned onto the new provider |
+| `injectProvider` | `true` | Auto-add the new supplier + clean legacy `（Multikey）` variants on load |
+| `multikeySuffix` | `" (Multikey)"` | Suffix recognized when cleaning legacy variants |
+| `fallbackProtocol` | `openai-completions` | Wire protocol used when the source route declares no `api` |
 
 Example:
 
@@ -196,10 +198,10 @@ All endpoints accept only loopback requests (`127.0.0.1` / `::1`, Host header ch
 
 ## Usage accounting
 
-The plugin no longer renders usage itself. The proxy **forwards the upstream `usage` unmodified**, so DSH's own token meter records each call and [dsh-usage-stats](https://github.com/Ychris12138/dsh-usage-stats) displays the pooled usage per `（Multikey）` model. To do so the proxy understands every usage shape while streaming: OpenAI `prompt_tokens / completion_tokens / total_tokens`, OpenAI Responses `input_tokens / output_tokens / input_tokens_details.cached_tokens`, Anthropic `input_tokens / output_tokens / cache_read_input_tokens / cache_creation_input_tokens`.
+The plugin no longer renders usage itself. The proxy **forwards the upstream `usage` unmodified**, so DSH's own token meter records each call and [dsh-usage-stats](https://github.com/Ychris12138/dsh-usage-stats) displays the pooled usage per "OpenCode Go Multikey" model. To do so the proxy understands every usage shape while streaming: OpenAI `prompt_tokens / completion_tokens / total_tokens`, OpenAI Responses `input_tokens / output_tokens / input_tokens_details.cached_tokens`, Anthropic `input_tokens / output_tokens / cache_read_input_tokens / cache_creation_input_tokens`.
 
 - SSE responses parse `data:` lines and merge by per-field maximum (OpenAI returns the cumulative total at the end; Anthropic reports input at `message_start` and output at `message_delta`).
-- A `（Multikey）` model id is normalized to its base model before forwarding; dsh-usage-stats groups it under the `（Multikey）` model id DSH actually called.
+- Models are forwarded with their real ids, so dsh-usage-stats groups usage under the "OpenCode Go Multikey" model id that DSH actually called.
 
 ---
 

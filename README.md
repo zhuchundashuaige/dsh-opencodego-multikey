@@ -12,10 +12,10 @@
 
 DSH 内置的 `opencode-go` 供应商每个路由只能配置一个 API Key。本插件在本地起一个反向代理，把多个 key 聚合成 **一个 Key 池**：
 
-- **Multikey 系列模型**：载入后自动在模型下拉框为 `opencode-go` 每个模型追加同名 `（Multikey）` 副本（如 `minimax-m3 (Multikey)`），并把供应商 baseURL 指向本地代理；选择这些模型调用即自动对 Key 池做**负载均衡**；
+- **独立供应商「OpenCode Go Multikey」**：载入后自动新增一个供应商路由 `opencode-go-multikey`（显示名 `OpenCode Go Multikey`），其模型与 `OpenCode Go` 完全一致、apiKey 随便填即可，并把 baseURL 指向本地代理；在模型下拉框选择该供应商的模型调用即自动对 Key 池做**负载均衡**；
 - **多 Key 管理**：在 **设置 → OpenCodeGo 多Key** 页面直接添加 / 删除 / 启停任意数量的 API Key；
 - **按用量自动调度**：每个请求自动选择“剩余额度最充足”的 key，额度相同则轮询；快用完 / 失效 / 被限流的 key 自动跳过并隔离，到期自动恢复；
-- **用量交给 dsh-usage-stats 展示**：本插件不自绘用量面板，各 `（Multikey）` 模型的池用量由 [dsh-usage-stats](https://github.com/Ychris12138/dsh-usage-stats) 按 model 维度展示。
+- **用量交给 dsh-usage-stats 展示**：本插件不自绘用量面板。因为「OpenCode Go Multikey」是独立供应商，[dsh-usage-stats](https://github.com/Ychris12138/dsh-usage-stats) 能以独立供应商维度清晰统计/展示该池的汇总 Usage。
 
 ---
 
@@ -23,14 +23,14 @@ DSH 内置的 `opencode-go` 供应商每个路由只能配置一个 API Key。�
 
 | 能力 | 说明 |
 | --- | --- |
-| 本地反向代理 | 监听 `127.0.0.1:19781`（可配），原样透传 OpenAI / Anthropic 请求，仅替换 `Authorization`，并按需还原 `（Multikey）` 模型 |
-| Multikey 模型注入 | 启动时经 `settings` 服务把 `opencode-go` baseURL 指向代理，并为每个模型追加 `（Multikey）` 变体（可关） |
+| 本地反向代理 | 监听 `127.0.0.1:19781`（可配），原样透传 OpenAI / Anthropic 请求，仅替换 `Authorization` |
+| 独立供应商注入 | 启动时经 `settings` 服务新增供应商 `opencode-go-multikey`（显示名 `OpenCode Go Multikey`，模型与 `opencode-go` 一致，api key 任意），baseURL 指向代理；并清理旧的 `（Multikey）` 模型变体 |
 | 智能选 Key | 剩余额度最高优先（月度 > 周度 > 滚动）；额度未知以中性分参与；同分轮询 |
 | 自动隔离 | 401/403 隔离 10 分钟、429 隔离 1 分钟、网络抖动隔离 30 秒（可配），手动可解除 |
 | 低额度模型降级（可选） | 如 `qwen3.7-max → qwen3.7-plus`；额度未知时绝不擅自改模型 |
 | 入口 | 仅 **设置菜单**（Settings → OpenCodeGo 多Key），无侧边栏入口 |
-| 用量展示 | 由 dsh-usage-stats 按 `（Multikey）` / 自定义模型展示（本插件不自绘用量面板） |
-| 双语 | 设置页与 README 均中英双语 |
+| 用量展示 | 由 dsh-usage-stats 按独立供应商「OpenCode Go Multikey」各 model 展示（本插件不自绘用量面板） |
+| 双语 | 设置页与 README 均中英双语（README.md + README.en.md 可切换） |
 | 持久化 | 状态存于 `<DSH_HOME>/storages/opencodego-multikey.json` |
 | 安全 | 代理与管理 API 仅允许回环访问；任何视图只显示打码 key |
 
@@ -79,7 +79,7 @@ dsh plugin --profile web add github:zhuchundashuaige/dsh-opencodego-multikey
 node scripts/install.mjs
 ```
 
-安装完成后 **重启一次 `dsh web`**（宿主侧注入 baseURL + `（Multikey）` 模型需加载新代码），再**强制刷新浏览器**（Ctrl+Shift+R）。
+安装完成后 **重启一次 `dsh web`**（宿主侧新增「OpenCode Go Multikey」供应商需加载新代码），再**强制刷新浏览器**（Ctrl+Shift+R）。
 
 ### 开发期热更新
 
@@ -100,22 +100,21 @@ dsh plugin --profile web add link:C:\path\to\dsh-opencodego-multikey
 
 载入插件后会自动（经 `settings` 服务，幂等）完成：
 
-- `opencode-go` 供应商 `baseURL = http://127.0.0.1:{listenPort}`（指向本地代理）；
-- 为每个已列模型追加 `（Multikey）` 变体（id + ` (Multikey)`，继承 name/contextWindow/maxTokens）。
+- **新增独立供应商** `opencode-go-multikey`（显示名 `OpenCode Go Multikey`）：模型与 `opencode-go` 完全一致、`api` 与 `apiKeyEnv` 继承（apiKey 随便填即可），`baseURL = http://127.0.0.1:{listenPort}`（指向本地代理）；
+- 清理 `opencode-go` 供应商里可能残留的 `（Multikey）` 模型变体（保持原有模型与 baseURL 不变）。
 
-`apiKeyEnv` 保持不变（其值仅用于通过 DSH 配置校验，代理会忽略入站凭证，改从 Key 池取用）。
+这样在模型下拉框会多出「OpenCode Go Multikey」这一整套模型，选择它们即走 Key 池负载均衡；`apiKeyEnv` 值仅用于通过 DSH 配置校验，代理会忽略入站凭证、改从 Key 池取用，天然利于 dsh-usage-stats 以独立供应商维度统计。
 
-若想手动管理，可在插件 `config` 里设 `injectProvider: false`，自行把 `opencode-go` 的 baseURL 改为
-`http://127.0.0.1:{listenPort}`，并可手动添加 `（Multikey）` 模型。
+若想手动管理，可在插件 `config` 里设 `injectProvider: false`，自行新增上述供应商（baseURL 指向本地代理）或手动管理模型。
 
 ---
 
 ## 使用
 
-1. 模型下拉框选择带 **`（Multikey）`** 后缀的模型（如 `minimax-m3 (Multikey)`）——调用自动走 Key 池负载均衡。
+1. 模型下拉框选择 **供应商「OpenCode Go Multikey」** 下的任意模型（如 `minimax-m3`）——调用自动走 Key 池负载均衡。
 2. 打开 **设置 → OpenCodeGo 多Key**，粘贴 OpenCode Go API Key（可加备注），点「添加」；插件立即探测该 key 额度，之后每 60 秒自动刷新。每张 key 卡片显示：状态（可用 / 已隔离 / 已停用）与滚动 / 周 / 月额度条（已用 % + 重置时间）。
 3. 停用 / 删除某个 key，或解除自动隔离的 key。
-4. **查看汇总用量**：用量由 [dsh-usage-stats](https://github.com/Ychris12138/dsh-usage-stats) 展示。打开侧边栏「用量/余额」（Usage/Balance），按 `（Multikey）` 模型维度即可看到池用量。
+4. **查看汇总用量**：用量由 [dsh-usage-stats](https://github.com/Ychris12138/dsh-usage-stats) 展示。打开侧边栏「用量/余额」（Usage/Balance），即可在「OpenCode Go Multikey」供应商下看到各模型的汇总 Usage。
 
 ### 调度规则
 
@@ -124,7 +123,7 @@ dsh plugin --profile web add link:C:\path\to\dsh-opencodego-multikey
 - 额度未知的 key 以中性分（50）参与竞争；
 - 额度 ≤ `exhaustThresholdPct`（默认 2%）视为耗尽并跳过；
 - 同分按“最近最少被选”轮询；
-- `（Multikey）` 模型 id 会先剥掉后缀再参与降级查找与转发，因此 `fallbacks` 按真实模型名匹配。
+- `fallbacks` 按模型真实 id 匹配（供应商模型 id 与 `opencode-go` 一致）。
 
 ### 低额度模型降级（可选）
 
@@ -159,10 +158,13 @@ dsh plugin --profile web add link:C:\path\to\dsh-opencodego-multikey
 | `quarantineNetworkMs` | `30000` | 网络抖动隔离时长 |
 | `historyDays` | `90` | 每日明细保留天数 |
 | `stateFile` | `<DSH_HOME>/storages/opencodego-multikey.json` | 状态文件路径 |
-| `providerRoute` | `opencode-go` | 注入 `（Multikey）` 模型的供应商路由（`llm-pi-ai.providers` 下） |
-| `proxyBaseURL` | `http://127.0.0.1:{listenPort}` | 写入供应商 baseURL 的本地代理地址 |
-| `injectProvider` | `true` | 启动时自动写入 baseURL + `（Multikey）` 模型到 llm-pi-ai 配置 |
-| `multikeySuffix` | `" (Multikey)"` | 注入模型 id 的后缀 |
+| `sourceRoute` | `opencode-go` | 被镜像的源供应商路由（其模型与 api/protocol 作为新供应商的样板） |
+| `newProviderRoute` | `opencode-go-multikey` | 新增的独立供应商路由 id（`llm-pi-ai.providers` 下） |
+| `newProviderDisplayName` | `OpenCode Go Multikey` | 新增供应商的显示名 |
+| `proxyBaseURL` | `http://127.0.0.1:{listenPort}` | 新增供应商 baseURL 指向的本地代理地址 |
+| `injectProvider` | `true` | 启动时自动新增供应商 + 清理旧 `（Multikey）` 变体到 llm-pi-ai 配置 |
+| `multikeySuffix` | `" (Multikey)"` | 清理旧变体时识别用的后缀 |
+| `fallbackProtocol` | `openai-completions` | 源供应商未声明 `api` 时新供应商使用的 wire 协议 |
 
 示例：
 
@@ -172,6 +174,8 @@ dsh plugin --profile web add link:C:\path\to\dsh-opencodego-multikey
   config:
     listenPort: 19781
     upstreamBaseURL: https://opencode.ai/zen/go
+    newProviderRoute: opencode-go-multikey
+    newProviderDisplayName: OpenCode Go Multikey
     fallbackThresholdPct: 15
     fallbacks:
       qwen3.7-max: qwen3.7-plus
@@ -196,10 +200,10 @@ dsh plugin --profile web add link:C:\path\to\dsh-opencodego-multikey
 
 ## 用量统计口径
 
-本插件不再自绘用量。代理**原样透传**上游 `usage`，由 DSH 自带的 token meter 计费，[dsh-usage-stats](https://github.com/Ychris12138/dsh-usage-stats) 按 `（Multikey）` 模型展示池用量。为此代理识别流式/非流式的各种用量形状：OpenAI `prompt_tokens / completion_tokens / total_tokens`、OpenAI Responses `input_tokens / output_tokens / input_tokens_details.cached_tokens`、Anthropic `input_tokens / output_tokens / cache_read_input_tokens / cache_creation_input_tokens`。
+本插件不再自绘用量。代理**原样透传**上游 `usage`，由 DSH 自带的 token meter 计费，[dsh-usage-stats](https://github.com/Ychris12138/dsh-usage-stats) 按「OpenCode Go Multikey」模型展示池用量。为此代理识别流式/非流式的各种用量形状：OpenAI `prompt_tokens / completion_tokens / total_tokens`、OpenAI Responses `input_tokens / output_tokens / input_tokens_details.cached_tokens`、Anthropic `input_tokens / output_tokens / cache_read_input_tokens / cache_creation_input_tokens`。
 
 - SSE 响应边转发边解析 `data:` 行，按字段取最大值合并；
-- `（Multikey）` 模型 id 先还原为真实模型再转发，dsh-usage-stats 以 DSH 实际调用的 `（Multikey）` 模型 id 分组。
+- 模型以真实 id 转发，dsh-usage-stats 以 DSH 实际调用的「OpenCode Go Multikey」模型 id 分组。
 
 ---
 
