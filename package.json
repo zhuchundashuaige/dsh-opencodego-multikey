@@ -1,7 +1,7 @@
 {
   "name": "dsh-opencodego-multikey",
   "description": "OpenCode Go multi-key gateway for DSH: (Multikey) models route through a load-balanced API-key pool; usage shown by dsh-usage-stats",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "keywords": [
     "deepseek",
@@ -30,6 +30,7 @@
     "cordis.patch.yml",
     "scripts/install.mjs",
     "README.md",
+    "README.en.md",
     "LICENSE",
     "SECURITY.md"
   ],
