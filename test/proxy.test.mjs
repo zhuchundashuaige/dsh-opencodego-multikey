@@ -6,6 +6,7 @@ import {
 	applyModelFallback,
 	captureSseLine,
 	createProxyServer,
+	filteredResponseHeaders,
 	forwardHeaders,
 	mergeUsage
 } from "../lib/proxy.js";
@@ -24,6 +25,24 @@ test("forwardHeaders strips hop-by-hop and connection headers", () => {
 		"x-custom": "yes"
 	});
 	assert.deepEqual(out, { "content-type": "application/json", "x-custom": "yes" });
+});
+
+test("filteredResponseHeaders keeps content-encoding but recomputes content-length", () => {
+	// Regression: stripping content-encoding while forwarding gzip bytes
+	// garbles the body into the corrupted-404 output users reported.
+	const out = filteredResponseHeaders({
+		"content-type": "application/json",
+		"content-encoding": "gzip",
+		"content-length": "999",
+		"transfer-encoding": "chunked",
+		"connection": "keep-alive",
+		"x-upstream": "ok"
+	}, Buffer.from("ABC"));
+	assert.equal(out["content-encoding"], "gzip");
+	assert.equal(out["content-length"], "3");
+	assert.equal(out["transfer-encoding"], undefined);
+	assert.equal(out["connection"], undefined);
+	assert.equal(out["content-type"], "application/json");
 });
 
 test("applyModelFallback rewrites only when quota is low", () => {

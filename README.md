@@ -1,159 +1,181 @@
 # dsh-opencodego-multikey
 
-为 DeepSeek Harness（DSH）Web 版设计的 **OpenCode Go 多 API Key 网关插件**。
+> **中文** — 为 DeepSeek Harness (DSH) Web 版设计的 **OpenCode Go 多 API Key 网关插件**。
+> **English** — An **OpenCode Go multi-API-key gateway plugin** for the DeepSeek Harness (DSH) Web GUI.
 
-DSH 内置的 `opencode-go` 供应商每个路由只能配置一个 API Key：有多个 key 时要手动切换、无法按额度合理分配请求、按 key 查用量非常麻烦。本插件在本地起一个反向代理，把 **多个 key 聚合成一个"池"**，并自动解决这三件事：
+DSH ships an `opencode-go` provider that only allows **one** API key per route. With several keys the user must switch between them by hand, cannot distribute requests by remaining quota, and has no per-key usage view. This plugin runs a local reverse proxy that folds many keys into **one pool** and solves all three problems automatically:
 
-- **多 Key 管理**：在 Web 侧边栏面板里直接添加 / 删除 / 启停任意数量的 OpenCode Go API Key，无需改配置文件；
-- **按用量自动调度**：每个请求自动选择"剩余额度最充足"的 key 去调用换取，额度相同则轮询（round-robin），额度快用完 / 失效 / 被限流的 key 自动跳过并隔离，失效 key 到期自动恢复；
-- **用量统计**：按 key 记录请求数、输入/输出/缓存 token、估算费用、被选中次数与每日明细，并提供**汇总用量**（今日 / 本月 / 累计），全部在 Web 面板上一目了然。
+- **中文**
+  - **多 Key 管理**：在 Web 侧边栏面板 / 设置页里直接添加、删除、启停任意数量的 OpenCode Go API Key，无需改配置文件；
+  - **按用量自动调度**：每个请求自动选择"剩余额度最充足"的 key；额度相同则轮询 (round-robin)；额度快用完 / 失效 / 被限流的 key 自动跳过并隔离，到期自动恢复；
+  - **用量统计**：按 key 记录请求数、输入/输出/缓存 token、估算费用、被选中次数与每日明细，并提供**汇总用量**（今日 / 本月 / 累计）。
+
+- **English**
+  - **Multi-key management**: add / remove / enable / disable any number of OpenCode Go API keys right from the sidebar panel or the Settings page — no config files to edit;
+  - **Quota-aware scheduling**: every request automatically uses the key with the most remaining quota; ties are round-robined; nearly-exhausted / invalid / rate-limited keys are skipped and quarantined, then recover when the quarantine lapses;
+  - **Usage tracking**: per-key request counts, input/output/cache tokens, estimated cost, pick counts and daily detail, plus an **aggregate summary** (today / month / all-time).
 
 ---
 
-## 特性
+## Features / 特性
 
-| 能力 | 说明 |
+| 中文 | English |
 | --- | --- |
-| 本地反向代理 | 监听 `127.0.0.1:19781`（可配），OpenAI 与 Anthropic 风格的请求原样透传，仅在转发时替换 `Authorization` |
-| 智能选 Key | 剩余额度最高优先；月度 > 周度 > 滚动窗口；额度未知的 key 以中性分参与竞争；同分轮询 |
-| 自动隔离 | 401/403 隔离 10 分钟、429 隔离 1 分钟、网络抖动隔离 30 秒（时长可配），手动可解除 |
-| 低额度降级（可选） | 选中的 key 剩余额度低于阈值时，可把昂贵模型自动换成便宜模型（如 `qwen3.7-max → qwen3.7-plus`） |
-| 用量统计 | 兼容 OpenAI chat completions / responses 与 Anthropic Messages 的 JSON 与 SSE 用量字段 |
-| 汇总面板 | 每个 key 的额度条（滚动/周/月窗口 + 重置时间）、token 用量、费用、选中次数；顶部今日/本月/累计汇总 |
-| 持久化 | 状态（key、统计、隔离）存于 `<DSH_HOME>/storages/opencodego-multikey.json`，重启不丢 |
-| 安全 | 代理与管理 API 均只允许回环访问；任何对外视图都只显示打码的 key |
+| 本地反向代理，监听 `127.0.0.1:19781`（可配），原样透传 OpenAI / Anthropic 请求，仅替换 `Authorization` | Local reverse proxy on `127.0.0.1:19781` (configurable); forwards OpenAI / Anthropic requests verbatim, only swapping `Authorization` |
+| 智能选 Key：剩余额度最高优先（月度 > 周度 > 滚动）；额度未知以中性分参与；同分轮询 | Smart key selection: highest remaining quota first (monthly > weekly > rolling); unknown quota joins neutrally; ties round-robin |
+| 自动隔离：401/403 隔离 10 分钟、429 隔离 1 分钟、网络抖动隔离 30 秒（可配） | Auto-quarantine: 401/403 for 10 min, 429 for 1 min, transient network for 30 s (configurable) |
+| 低额度模型降级（可选）如 `qwen3.7-max → qwen3.7-plus` | Optional low-quota model downgrade, e.g. `qwen3.7-max → qwen3.7-plus` |
+| 用量统计兼容 OpenAI / Anthropic 的 JSON 与 SSE 用量字段 | Usage capture compatible with OpenAI / Anthropic JSON and SSE usage fields |
+| 侧边栏面板 **与 dsh-usage-stats 并排一行**，设置菜单也有入口 | Sidebar panel **side-by-side in the same row as dsh-usage-stats**, plus a Settings-menu entry |
+| 面板双语（中 / EN），随界面语言自动切换 | Bilingual panel (zh / en), follows the UI locale automatically |
+| 状态持久化到 `<DSH_HOME>/storages/opencodego-multikey.json` | State persisted to `<DSH_HOME>/storages/opencodego-multikey.json` |
+| 代理与管理 API 仅允许回环访问；任何视图只显示打码 key | Proxy and management API are loopback-only; every view shows masked keys |
 
-## 架构
+---
+
+## Architecture / 架构
 
 ```
-                        ┌────────────────────────── DSH Web 进程 ──────────────────────────┐
- DSH pi-ai 请求 ──────► │  opencode-go 供应商路由 baseURL 指向本地代理                        │
- (baseURL =            │      │                                                            │
-  http://127.0.0.1:19781)   ▼                                                            │
-                        │  ┌──────────────────────────────────────────┐                    │
-                        │  │ lib/proxy.js  反向代理（仅 127.0.0.1）     │                    │
-                        │  │  1. 从 KeyPool 选剩余额度最高的 key         │                    │
-                        │  │  2. 可选模型降级（fallbacks）               │                    │
-                        │  │  3. 转发到 https://opencode.ai/zen/go      │                    │
-                        │  │  4. 透传响应并捕获 token 用量               │                    │
-                        │  └──────────────────┬───────────────────────┘                    │
-                        │                     │ 记录用量 / 隔离                            │
-                        │  ┌──────────────────▼───────────────────────┐                    │
-                        │  │ KeyPool + 用量统计（内存 + 状态文件持久化）   │                    │
-                        │  └──────────────────┬───────────────────────┘                    │
-                        │                     │ 每 60s 拉取各 key 额度                      │
-                        │  ┌──────────────────▼───────────────────────┐                    │
-                        │  │ lib/quota.js  GET /v1/usage（Bearer）      │                    │
-                        │  └──────────────────────────────────────────┘                    │
-                        │                                                                    │
-                        │  管理 API（同源、回环）：/api/opencodego-multikey/*                 │
-                        │  ▲                                                                 │
-                        └──┴────────────────────────────────────────────────────────────────┘
+                        ┌──────────────────────── DSH Web process ───────────────────────┐
+ DSH pi-ai request ────►│ opencode-go provider route baseURL → local proxy              │
+ (baseURL =             │      │                                                         │
+  http://127.0.0.1:19781)     ▼                                                         │
+                        │  ┌───────────────────────────────────────────────┐             │
+                        │  │ lib/proxy.js  reverse proxy (loopback only)    │             │
+                        │  │  1. pick best key (most remaining quota)        │             │
+                        │  │  2. optional model downgrade (fallbacks)        │             │
+                        │  │  3. forward to https://opencode.ai/zen/go       │             │
+                        │  │  4. stream back, capture token usage            │             │
+                        │  └──────────────────┬────────────────────────────┘             │
+                        │                     │ usage / quarantine                       │
+                        │  ┌──────────────────▼─────────────────────────────┐             │
+                        │  │ KeyPool + usage stats (memory + state file)     │             │
+                        │  └──────────────────┬─────────────────────────────┘             │
+                        │                     │ pull quota every 60 s                     │
+                        │  ┌──────────────────▼─────────────────────────────┐             │
+                        │  │ lib/quota.js  GET /v1/usage (Bearer)            │             │
+                        │  └────────────────────────────────────────────────.┘             │
+                        │  management API (same-origin, loopback): /api/opencodego-multikey/* │
+                        └──▲──────────────────────────────────────────────────────────────┘
                            │
-                        浏览器（Web 面板"Go 多Key"：添加/删除 key、额度条、用量汇总）
+                   Browser (sidebar "Go 多Key" + Settings page: quota bars, usage summary)
 ```
 
-## 安装
+---
 
-### 方式一：`dsh plugin`（推荐）
+## Install / 安装
+
+### Recommended / 推荐
 
 ```bash
-dsh plugin --profile web add github:<你的仓库路径>/dsh-opencodego-multikey
+dsh plugin --profile web add github:zhuchundashuaige/dsh-opencodego-multikey
 ```
 
-### 方式二：直接使用仓库里的安装脚本
+or directly from this repository (installer copies files + appends the cordis patch):
 
 ```bash
-# 在本仓库目录下
-node scripts/install.mjs            # 安装文件 + 写入 cordis.patch.yml
-node scripts/install.mjs --dry-run  # 只打印将要做什么
-node scripts/install.mjs --check    # 校验已安装状态
+node scripts/install.mjs
 ```
 
-脚本会把包复制到 `<DSH_HOME>/profiles/web/node_modules/dsh-opencodego-multikey`，
-并在 `<DSH_HOME>/profiles/web/cordis.patch.yml` 追加一行挂载补丁（幂等）。
+### Hot reload during development / 开发期热更新
 
-安装完成后 **重启 `dsh web`，并强制刷新浏览器**（Ctrl+Shift+R）。
+To live-edit the panel without restarting `dsh`, depend on a **local link** to this checkout:
 
-### 依赖的 DSH 客户端注入
+```bash
+dsh plugin --profile web remove dsh-opencodego-multikey
+dsh plugin --profile web add link:C:\path\to\dsh-opencodego-multikey
+```
 
-`package.json` 中的 `dsh.client.inject` 声明了客户端运行时依赖
-（`@deepseek-ai/dsh-client-locale`、`@deepseek-ai/dsh-client-runtime`、
-`@deepseek-ai/dsh-client-ui-primitives`），与同生态插件一致。
+The client bundle is served with `no-cache` and re-hashed, so after changing
+`lib/client.js` you just **hard-refresh the browser** (Ctrl+Shift+R) — no `dsh`
+restart needed for panel changes. Host-side (`lib/*.js`) changes do require a
+`dsh` restart.
 
-## 配置 DSH 供应商（关键步骤）
+客户端 bundle 以 `no-cache` 方式提供并重新哈希，改完 `lib/client.js` 后只需**强制刷新浏览器**即可看到面板变更（改宿主端 `lib/*.js` 才需重启 `dsh`）。
 
-让 DSH 的 `opencode-go` 供应商路由指向本插件代理：
+> The plugin must be in the profile's `dsh.profile.bundles` list; `dsh plugin add`
+> adds it automatically because the package declares `dsh.bundle`. / 插件需在 profile 的
+> `dsh.profile.bundles` 列表中；`dsh plugin add` 因包声明 `dsh.bundle` 会自动加入。
 
-1. 打开 DSH Web 设置的 **Models / 供应商** 页面；
-2. 找到 `opencode-go`（或新建同名路由），把 **baseURL 改为**
-   `http://127.0.0.1:19781`（端口与插件 `listenPort` 配置一致）；
-3. `apiKeyEnv` 随便填一个已存在的凭证 ref（如 `OPENCODE_GO_API_KEY`），
-   值随便填（例如 `sk-placeholder`）——**代理会忽略入站 Authorization，
-   真正使用的 key 来自面板里配置的 Key 池**（此路由的凭证仅用于通过
-   DSH 的配置校验）；
-4. 保存。模型列表仍使用 pi-ai 内置的 opencode-go 目录
-   （`minimax-m3` / `qwen3.7-max` / `qwen3.7-plus` 等）。
+After installation: **restart `dsh web`** (host side) once, then hard-refresh the browser.
 
-> 也可以手写配置：在 `llm-pi-ai` 设置命名空间下
-> `providers.opencode-go.baseURL = http://127.0.0.1:19781`。
+---
 
-## 使用
+## Configure the DSH provider / 配置 DSH 供应商
 
-1. 在 DSH Web 侧边栏底部找到 **「Go 多Key」** 按钮，点击打开面板；
-2. 在面板底部粘贴一个 OpenCode Go API Key（可加备注名），点「添加」；
-   添加后插件会立即探测该 key 的额度，并每 60 秒自动刷新；
-3. 重复添加其余 key。面板会显示每个 key 的：状态（可用/已隔离/已停用）、
-   滚动/周/月额度条（已用 % 与重置时间）、请求数、输入/输出 token、
-   估算费用、被选中次数；
-4. 顶部显示**汇总用量**：今日 / 本月 / 累计 token 与总估算费用；
-5. 需要停用或删除某个 key：卡片上的「停用」「删除」按钮；
-   被自动隔离的 key 可点「解除隔离」。
+Point the `opencode-go` provider route's baseURL at the local proxy:
 
-### 自动切换策略
+1. Open **Models / Providers** in DSH Web settings.
+2. Set `opencode-go` **baseURL = `http://127.0.0.1:19781`** (port matches the plugin `listenPort`).
+3. Set `apiKeyEnv` to any existing credential ref (e.g. `OPENCODE_GO_API_KEY`) with any value
+   (e.g. `sk-placeholder`) — **the proxy ignores the inbound authorization; the real keys come
+   from the Key pool in the panel**. This route's credential only satisfies DSH's config validation.
+4. Save. The model list still comes from pi-ai's built-in opencode-go catalog
+   (`minimax-m3` / `qwen3.7-max` / `qwen3.7-plus`).
 
-- 每个请求开始时，从**未停用、未隔离、未耗尽**的 key 中挑选；
-- 按剩余额度排序：`月度窗口 > 周度窗口 > 滚动窗口` 的剩余百分比；
-- 额度未知（暂未拉到统计）的 key 以中性分（50）参与竞争；
-- 额度剩余 ≤ `exhaustThresholdPct`（默认 2%）视为耗尽，自动跳过；
-- 同分 key 按"最近最少被选"轮询，避免单个 key 过热。
+中文：在 DSH Web 设置的 Models/供应商页面把 `opencode-go` 路由 baseURL 改为
+`http://127.0.0.1:19781`；`apiKeyEnv` 填任意已有 ref（如 `OPENCODE_GO_API_KEY`）值随意（如
+`sk-placeholder`）——代理会忽略入站 Authorization，真正使用的 key 来自面板里配置的 Key 池。
 
-### 低额度模型降级（可选）
+---
 
-在插件配置里设置 `fallbacks`，当选中的 key 剩余额度 ≤
-`fallbackThresholdPct`（默认 10%）时，请求会被自动改写为更便宜的模型：
+## Usage / 使用
+
+1. Click the **「Go 多Key」 / "Go Keys"** button at the sidebar foot (beside usage-stats), **or** open it
+   from the **Settings menu** (settings → "OpenCodeGo 多Key" / "OpenCodeGo Multi-Key").
+2. In the panel, paste an OpenCode Go API key (optional label) and hit **Add / 添加**. The plugin
+   immediately probes the key's quota, then auto-refreshes every 60 s.
+3. Repeat for the other keys. Each key card shows: status (active / quarantined / disabled), the
+   rolling / weekly / monthly quota bars (used % + reset time), request count, input/output tokens,
+   estimated cost and pick count.
+4. The top shows **aggregate usage**: today / month / all-time tokens and total estimated cost.
+5. Disable or delete a key from its card; un-quarantine a key that was auto-isolated.
+
+### Scheduling rules / 调度规则
+
+- Each request starts by picking from **enabled, non-quarantined, non-exhausted** keys.
+- Sorted by remaining quota: `monthly > weekly > rolling` remaining percent.
+- Keys with unknown quota (not yet fetched) compete with a neutral score (50).
+- Quota ≤ `exhaustThresholdPct` (default 2%) counts as exhausted and is skipped.
+- Equal score → least-recently-picked wins (round-robin).
+
+### Model downgrade (optional) / 低额度模型降级（可选）
 
 ```yaml
 - id: opencodego-multikey
   config:
     fallbackThresholdPct: 10
     fallbacks:
-      qwen3.7-max: qwen3.7-plus   # 贵 → 便宜
+      qwen3.7-max: qwen3.7-plus   # 贵 → 便宜 / expensive → cheap
       qwen3.7-plus: minimax-m3
 ```
 
-额度未知时**不会**擅自改模型（避免未知状态下把用户指定的模型静默换掉）。
+When the selected key's remaining quota ≤ `fallbackThresholdPct` (default 10%) the request model is
+rewritten to the cheaper one. Downgrade never happens while the quota is unknown (so a user-chosen
+model is never silently changed in an unknown state).
 
-## 插件配置项
+---
 
-均通过 `cordis.patch.yml` 中该行的 `config` 传入（非必填，默认值如下）：
+## Configuration / 配置项
 
-| 配置项 | 默认值 | 说明 |
+All passed via the `config` of the `opencodego-multikey` row (all optional; defaults below).
+
+| Key / 键 | Default / 默认 | Description / 说明 |
 | --- | --- | --- |
-| `listenPort` | `19781` | 代理监听端口（仅 127.0.0.1） |
-| `host` | `127.0.0.1` | 代理监听地址 |
-| `upstreamBaseURL` | `https://opencode.ai/zen/go` | 上游 OpenCode Go 地址 |
-| `refreshMs` | `60000` | 额度刷新周期（毫秒） |
-| `exhaustThresholdPct` | `2` | 剩余额度低于该百分比视为耗尽 |
-| `fallbackThresholdPct` | `10` | 触发模型降级的剩余额度阈值 |
-| `fallbacks` | `{}` | 模型降级映射（见上） |
-| `quarantineAuthMs` | `600000` | 401/403 隔离时长（毫秒） |
-| `quarantineRateMs` | `60000` | 429 隔离时长 |
-| `quarantineNetworkMs` | `30000` | 网络抖动隔离时长 |
-| `historyDays` | `90` | 每日明细保留天数 |
-| `stateFile` | `<DSH_HOME>/storages/opencodego-multikey.json` | 状态文件路径 |
+| `listenPort` | `19781` | Proxy listen port (loopback only) / 代理监听端口（仅回环） |
+| `host` | `127.0.0.1` | Proxy bind address / 代理监听地址 |
+| `upstreamBaseURL` | `https://opencode.ai/zen/go` | Upstream OpenCode Go origin / 上游地址 |
+| `refreshMs` | `60000` | Quota refresh period / 额度刷新周期（毫秒） |
+| `exhaustThresholdPct` | `2` | Remaining quota below this counts as exhausted / 视为耗尽的剩余额度阈值 |
+| `fallbackThresholdPct` | `10` | Quota threshold that triggers model downgrade / 触发模型降级的额度阈值 |
+| `fallbacks` | `{}` | Model downgrade map / 模型降级映射 |
+| `quarantineAuthMs` | `600000` | 401/403 quarantine duration / 401/403 隔离时长 |
+| `quarantineRateMs` | `60000` | 429 quarantine duration / 429 隔离时长 |
+| `quarantineNetworkMs` | `30000` | Transient-network quarantine / 网络抖动隔离时长 |
+| `historyDays` | `90` | Daily-detail retention days / 每日明细保留天数 |
+| `stateFile` | `<DSH_HOME>/storages/opencodego-multikey.json` | State file / 状态文件路径 |
 
-示例：
+Example / 示例:
 
 ```yaml
 # <DSH_HOME>/profiles/web/cordis.patch.yml
@@ -166,47 +188,67 @@ node scripts/install.mjs --check    # 校验已安装状态
       qwen3.7-max: qwen3.7-plus
 ```
 
-## 管理 API（回环，仅供面板使用）
+---
 
-| 方法 | 路径 | 说明 |
+## Management API / 管理 API（回环，仅供面板）
+
+| Method | Path | Description |
 | --- | --- | --- |
-| GET | `/api/opencodego-multikey/overview` | 配置摘要 + key 列表（打码）+ 每个 key 用量 + 汇总 |
-| POST | `/api/opencodego-multikey/keys` | 添加 key，body `{ key, label?, enabled? }` |
-| DELETE | `/api/opencodego-multikey/keys?id=<id>` | 删除 key |
-| POST | `/api/opencodego-multikey/keys/toggle` | 启停，body `{ id, enabled }` |
-| POST | `/api/opencodego-multikey/keys/clear-quarantine` | 解除隔离，body `{ id }` |
-| POST | `/api/opencodego-multikey/refresh` | 立即刷新所有 key 的额度 |
+| GET | `/api/opencodego-multikey/overview` | Config + masked key list + per-key usage + aggregate |
+| POST | `/api/opencodego-multikey/keys` | Add key, body `{ key, label?, enabled? }` |
+| DELETE | `/api/opencodego-multikey/keys?id=<id>` | Remove key |
+| POST | `/api/opencodego-multikey/keys/toggle` | Enable/disable, body `{ id, enabled }` |
+| POST | `/api/opencodego-multikey/keys/clear-quarantine` | Clear quarantine, body `{ id }` |
+| POST | `/api/opencodego-multikey/refresh` | Force refresh all keys' quota |
 
-所有接口只允许来自回环地址的请求（`127.0.0.1` / `::1`，含 Host 头校验）。
+All endpoints accept only loopback requests (`127.0.0.1` / `::1`, Host header checked).
 
-## 用量统计口径
+---
 
-- 代理从每次响应中捕获 `usage`：兼容
-  OpenAI `prompt_tokens / completion_tokens / total_tokens`、
-  OpenAI Responses `input_tokens / output_tokens / input_tokens_details.cached_tokens`、
-  Anthropic `input_tokens / output_tokens / cache_read_input_tokens / cache_creation_input_tokens`；
-- 流式（SSE）响应在转发的同时旁路解析 `data:` 行，按字段取最大值合并
-  （OpenAI 在末尾回传累计值，Anthropic 在开头/结尾分别回传输入/输出）；
-- 费用为按 opencode-go 目录模型单价估算（每百万 token 单价）：
-  `minimax-m3` 0.3/1.2、`qwen3.7-max` 2.5/7.5、`qwen3.7-plus` 0.4/1.6（$/1M，输入/输出），
-  未知模型不计费用；
+## Usage accounting / 用量统计口径
 
-## 开发
+- The proxy captures `usage` from each response: OpenAI `prompt_tokens / completion_tokens /
+  total_tokens`, OpenAI Responses `input_tokens / output_tokens / input_tokens_details.cached_tokens`,
+  Anthropic `input_tokens / output_tokens / cache_read_input_tokens / cache_creation_input_tokens`.
+- SSE responses parse `data:` lines while streaming and merge by per-field maximum (OpenAI returns the
+  cumulative total at the end; Anthropic reports input at `message_start` and output at `message_delta`).
+- Cost uses the opencode-go catalog rates ($ per 1M tokens): `minimax-m3` 0.3/1.2, `qwen3.7-max`
+  2.5/7.5, `qwen3.7-plus` 0.4/1.6 (input/output). Unknown models report no cost.
+
+---
+
+## Development / 开发
 
 ```bash
-npm run check   # 全部文件语法检查
-npm test        # 单元 + 集成测试（node:test，无需 DSH 环境）
+npm run check   # syntax-check every file / 全部文件语法检查
+npm test        # unit + integration tests (node:test, no DSH needed) / 单测 + 集成测试
 ```
 
-测试覆盖：额度窗口解析与评分、key 池选择/轮询/隔离、用量统计与汇总、
-代理转发与用量捕获的端到端链路（本地起假上游验证）。
+Coverage / 覆盖：quota-window parsing and scoring, key-pool selection / round-robin / quarantine,
+usage stats and aggregation, plus an end-to-end proxy test against a local fake upstream
+（含本地起假上游的端到端代理测试，验证选 Key、转发与用量捕获）。
 
-## 安全说明
+---
 
-见 [SECURITY.md](./SECURITY.md)。关键点：代理与 API 只绑定回环；
-key 只存在于内存与状态文件；任何视图只显示打码 key；
-上游固定走 `upstreamBaseURL` 的协议（默认 HTTPS）。
+## i18n / 双语
 
-## License
+The panel and Settings page read from a single locale namespace (`opencodegoMultiKey`) with `zh` and
+`en` dictionaries, registered through `ctx.locale`. The sidebar badge, panel, and the Settings nav
+label all follow the active UI language without re-registering.
+
+面板与设置页共用同一 locale 命名空间 `opencodegoMultiKey`（`zh`/`en` 字典，经 `ctx.locale`
+注册）；侧边入口、面板与设置页导航标签均随界面语言自动切换。
+
+---
+
+## Security / 安全
+
+See [SECURITY.md](./SECURITY.md). Key points / 关键点：proxy & API loopback-only;
+keys live only in memory and the state file; every view shows masked keys; upstream uses the
+`upstreamBaseURL` scheme (HTTPS by default).
+
+---
+
+## License / 许可证
 
 [MIT](./LICENSE)

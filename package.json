@@ -1,7 +1,7 @@
 {
   "name": "dsh-opencodego-multikey",
   "description": "OpenCode Go multi-key gateway for DSH: pool multiple API keys, pick the key with the most remaining quota per request, track per-key usage and aggregate totals in the web GUI",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "keywords": [
     "deepseek",
