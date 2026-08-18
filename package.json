@@ -1,0 +1,60 @@
+{
+  "name": "dsh-opencodego-multikey",
+  "description": "OpenCode Go multi-key gateway for DSH: pool multiple API keys, pick the key with the most remaining quota per request, track per-key usage and aggregate totals in the web GUI",
+  "version": "0.1.0",
+  "private": true,
+  "keywords": [
+    "deepseek",
+    "deepseek-harness",
+    "dsh",
+    "opencode",
+    "opencode-go",
+    "api-key",
+    "proxy",
+    "usage"
+  ],
+  "license": "MIT",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./quota": "./lib/quota.js",
+    "./keys": "./lib/keys.js",
+    "./stats": "./lib/stats.js",
+    "./proxy": "./lib/proxy.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/",
+    "cordis.patch.yml",
+    "scripts/install.mjs",
+    "README.md",
+    "LICENSE",
+    "SECURITY.md"
+  ],
+  "bin": {
+    "dsh-opencodego-multikey-install": "scripts/install.mjs"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-ui-primitives"
+      ]
+    }
+  },
+  "scripts": {
+    "check": "node --check lib/index.js && node --check lib/keys.js && node --check lib/quota.js && node --check lib/stats.js && node --check lib/proxy.js && node --check lib/client.js && node --check scripts/install.mjs",
+    "test": "node --test test/*.test.mjs"
+  },
+  "devDependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  }
+}

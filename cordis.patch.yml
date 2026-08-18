@@ -1,0 +1,11 @@
+# Mount the OpenCodeGo multi-key gateway when this package is registered as a
+# DeepSeek Harness profile bundle.
+#
+# Configurable through the row `config` (see README):
+#   - id: opencodego-multikey
+#     config:
+#       listenPort: 19781
+#       upstreamBaseURL: https://opencode.ai/zen/go
+- insert:
+    - id: opencodego-multikey
+      name: dsh-opencodego-multikey
