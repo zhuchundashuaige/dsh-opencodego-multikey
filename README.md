@@ -3,17 +3,20 @@
 > **中文** — 为 DeepSeek Harness (DSH) Web 版设计的 **OpenCode Go 多 API Key 网关插件**。
 > **English** — An **OpenCode Go multi-API-key gateway plugin** for the DeepSeek Harness (DSH) Web GUI.
 
-DSH ships an `opencode-go` provider that only allows **one** API key per route. With several keys the user must switch between them by hand, cannot distribute requests by remaining quota, and has no per-key usage view. This plugin runs a local reverse proxy that folds many keys into **one pool** and solves all three problems automatically:
+DSH ships an `opencode-go` provider that only allows **one** API key per route. With several keys the user must switch between them by hand, cannot distribute requests by remaining quota, and has no pooled usage view. This plugin runs a local reverse proxy that folds many keys into **one pool** and solves the problem automatically:
 
 - **中文**
-  - **多 Key 管理**：在 Web 侧边栏面板 / 设置页里直接添加、删除、启停任意数量的 OpenCode Go API Key，无需改配置文件；
+  - **Multikey 系列模型**：载入插件后，自动在 Model 下拉框为 `opencode-go` 每个模型追加同名 `（Multikey）` 副本（如 `minimax-m3 (Multikey)`），并把供应商 baseURL 指向本地代理；选择这些模型即自动对 API Key 池做负载均衡；
+  - **多 Key 管理**：在 Web 侧边栏入口 / 设置页里直接添加、删除、启停任意数量的 OpenCode Go API Key，无需改配置文件；
   - **按用量自动调度**：每个请求自动选择"剩余额度最充足"的 key；额度相同则轮询 (round-robin)；额度快用完 / 失效 / 被限流的 key 自动跳过并隔离，到期自动恢复；
-  - **用量统计**：按 key 记录请求数、输入/输出/缓存 token、估算费用、被选中次数与每日明细，并提供**汇总用量**（今日 / 本月 / 累计）。
+  - **用量交给 dsh-usage-stats 展示**：本插件不再自绘用量面板，各 `（Multikey）` 模型的池用量由 dsh-usage-stats 按 model 维度展示。
 
 - **English**
-  - **Multi-key management**: add / remove / enable / disable any number of OpenCode Go API keys right from the sidebar panel or the Settings page — no config files to edit;
+  - **"Multikey" models**: on load the plugin adds a `（Multikey）` variant of every `opencode-go` model (e.g. `minimax-m3 (Multikey)`) to the Model dropdown and points the provider baseURL at the local proxy; picking one routes the request through the pool for load-balancing;
+  - **Multi-key management**: add / remove / enable / disable any number of OpenCode Go API keys from the sidebar entry or the Settings page — no config files to edit;
   - **Quota-aware scheduling**: every request automatically uses the key with the most remaining quota; ties are round-robined; nearly-exhausted / invalid / rate-limited keys are skipped and quarantined, then recover when the quarantine lapses;
-  - **Usage tracking**: per-key request counts, input/output/cache tokens, estimated cost, pick counts and daily detail, plus an **aggregate summary** (today / month / all-time).
+  - **Usage shown by dsh-usage-stats**: the plugin no longer draws its own usage panel; per-"Multikey"-model pool usage is displayed by dsh-usage-stats. 
+
 
 ---
 
@@ -21,13 +24,14 @@ DSH ships an `opencode-go` provider that only allows **one** API key per route. 
 
 | 中文 | English |
 | --- | --- |
-| 本地反向代理，监听 `127.0.0.1:19781`（可配），原样透传 OpenAI / Anthropic 请求，仅替换 `Authorization` | Local reverse proxy on `127.0.0.1:19781` (configurable); forwards OpenAI / Anthropic requests verbatim, only swapping `Authorization` |
+| 本地反向代理，监听 `127.0.0.1:19781`（可配），原样透传 OpenAI / Anthropic 请求，仅替换 `Authorization` 并按需还原 `（Multikey）` 模型 | Local reverse proxy on `127.0.0.1:19781` (configurable); forwards OpenAI / Anthropic requests verbatim, only swapping `Authorization` and stripping the `（Multikey）` suffix |
 | 智能选 Key：剩余额度最高优先（月度 > 周度 > 滚动）；额度未知以中性分参与；同分轮询 | Smart key selection: highest remaining quota first (monthly > weekly > rolling); unknown quota joins neutrally; ties round-robin |
 | 自动隔离：401/403 隔离 10 分钟、429 隔离 1 分钟、网络抖动隔离 30 秒（可配） | Auto-quarantine: 401/403 for 10 min, 429 for 1 min, transient network for 30 s (configurable) |
 | 低额度模型降级（可选）如 `qwen3.7-max → qwen3.7-plus` | Optional low-quota model downgrade, e.g. `qwen3.7-max → qwen3.7-plus` |
-| 用量统计兼容 OpenAI / Anthropic 的 JSON 与 SSE 用量字段 | Usage capture compatible with OpenAI / Anthropic JSON and SSE usage fields |
-| 侧边栏面板 **与 dsh-usage-stats 并排一行**，设置菜单也有入口 | Sidebar panel **side-by-side in the same row as dsh-usage-stats**, plus a Settings-menu entry |
+| **Multikey 模型自动注入**：为每个 opencode-go 模型生成 `（Multikey）` 变体并固定 baseURL 到代理 | **Multikey model injection**: adds a `（Multikey）` variant of each opencode-go model and pins baseURL to the proxy |
+| 侧边栏入口位于 usage-stats **上方**，设置菜单也有入口 | Sidebar entry sits **above** usage-stats; a Settings-menu entry is also registered |
 | 面板双语（中 / EN），随界面语言自动切换 | Bilingual panel (zh / en), follows the UI locale automatically |
+| **用量由 dsh-usage-stats 按 model 展示**（本插件不自绘用量面板） | **Usage shown by dsh-usage-stats per model** (the plugin draws no usage panel) |
 | 状态持久化到 `<DSH_HOME>/storages/opencodego-multikey.json` | State persisted to `<DSH_HOME>/storages/opencodego-multikey.json` |
 | 代理与管理 API 仅允许回环访问；任何视图只显示打码 key | Proxy and management API are loopback-only; every view shows masked keys |
 
@@ -103,33 +107,40 @@ After installation: **restart `dsh web`** (host side) once, then hard-refresh th
 
 ## Configure the DSH provider / 配置 DSH 供应商
 
-Point the `opencode-go` provider route's baseURL at the local proxy:
+On activation the plugin **automatically** writes, through the harness `settings`
+service:
 
-1. Open **Models / Providers** in DSH Web settings.
-2. Set `opencode-go` **baseURL = `http://127.0.0.1:19781`** (port matches the plugin `listenPort`).
-3. Set `apiKeyEnv` to any existing credential ref (e.g. `OPENCODE_GO_API_KEY`) with any value
-   (e.g. `sk-placeholder`) — **the proxy ignores the inbound authorization; the real keys come
-   from the Key pool in the panel**. This route's credential only satisfies DSH's config validation.
-4. Save. The model list still comes from pi-ai's built-in opencode-go catalog
-   (`minimax-m3` / `qwen3.7-max` / `qwen3.7-plus`).
+- `opencode-go` provider `baseURL = http://127.0.0.1:{listenPort}` (the local proxy);
+- a `（Multikey）` variant of every listed opencode-go model (id + ` (Multikey)`).
+The `apiKeyEnv` is left as-is; its value only satisfies DSH's config validation —
+the proxy ignores the inbound credential and uses the Key pool instead.
 
-中文：在 DSH Web 设置的 Models/供应商页面把 `opencode-go` 路由 baseURL 改为
-`http://127.0.0.1:19781`；`apiKeyEnv` 填任意已有 ref（如 `OPENCODE_GO_API_KEY`）值随意（如
-`sk-placeholder`）——代理会忽略入站 Authorization，真正使用的 key 来自面板里配置的 Key 池。
+> **中文**：载入插件后会自动经 `settings` 服务把 `opencode-go` 的 baseURL 指向本地代理，
+> 并为每个模型追加 `（Multikey）` 变体。无需手动改配置。若你的 `opencode-go` 供应商尚未配置其他
+> 凭证，请保证仍有 `apiKeyEnv`（如 `OPENCODE_GO_API_KEY`）以便通过 DSH 配置校验。
+
+If you prefer to manage the provider by hand, set `injectProvider: false` in the
+plugin's `config` and set the `opencode-go` baseURL to `http://127.0.0.1:{listenPort}`
+yourself (e.g. in the Models UI). The "（Multikey）" models can then be added manually.
 
 ---
 
 ## Usage / 使用
 
-1. Click the **「Go 多Key」 / "Go Keys"** button at the sidebar foot (beside usage-stats), **or** open it
-   from the **Settings menu** (settings → "OpenCodeGo 多Key" / "OpenCodeGo Multi-Key").
-2. In the panel, paste an OpenCode Go API key (optional label) and hit **Add / 添加**. The plugin
-   immediately probes the key's quota, then auto-refreshes every 60 s.
-3. Repeat for the other keys. Each key card shows: status (active / quarantined / disabled), the
-   rolling / weekly / monthly quota bars (used % + reset time), request count, input/output tokens,
-   estimated cost and pick count.
-4. The top shows **aggregate usage**: today / month / all-time tokens and total estimated cost.
-5. Disable or delete a key from its card; un-quarantine a key that was auto-isolated.
+1. After load, open the Model dropdown and pick a **`（Multikey）`** model
+   (e.g. `minimax-m3 (Multikey)`). It is served by the proxy, which load-balances the Key pool.
+2. Add your OpenCode Go API keys: click the **「Go 多Key」 / "Go Keys"** entry at the sidebar
+   foot (**above** usage-stats), or open the **Settings** page → "OpenCodeGo 多Key" / "OpenCodeGo Multi-Key".
+3. In the panel, paste a key (optional label) and hit **Add / 添加**; the plugin probes its quota
+   immediately and refreshes every 60 s. Each key card shows status (active / quarantined / disabled)
+   and the rolling / weekly / monthly quota bars (used % + reset time).
+4. Disable / delete a key from its card; un-quarantine a key that was auto-isolated.
+5. **View usage with dsh-usage-stats**: open the "用量/余额" / "Usage & Balance" panel — each
+   `（Multikey）` model's pooled token usage appears there by model. The plugin draws no usage panel itself.
+
+> **中文**：载入后，在模型下拉框选择带 `（Multikey）` 后缀的模型即可走 Key 池负载均衡；在侧边栏
+> 「Go 多Key」（usage-stats 上方）或设置页「OpenCodeGo 多Key」管理 Key；用量请在 dsh-usage-stats
+> 的「用量/余额」面板按（Multikey）模型维度查看。
 
 ### Scheduling rules / 调度规则
 
@@ -138,6 +149,8 @@ Point the `opencode-go` provider route's baseURL at the local proxy:
 - Keys with unknown quota (not yet fetched) compete with a neutral score (50).
 - Quota ≤ `exhaustThresholdPct` (default 2%) counts as exhausted and is skipped.
 - Equal score → least-recently-picked wins (round-robin).
+- A `（Multikey）` model id is normalized (suffix stripped) before fallback lookup and forwarding,
+  so `fallbacks` match the underlying model name.
 
 ### Model downgrade (optional) / 低额度模型降级（可选）
 
@@ -174,6 +187,10 @@ All passed via the `config` of the `opencodego-multikey` row (all optional; defa
 | `quarantineNetworkMs` | `30000` | Transient-network quarantine / 网络抖动隔离时长 |
 | `historyDays` | `90` | Daily-detail retention days / 每日明细保留天数 |
 | `stateFile` | `<DSH_HOME>/storages/opencodego-multikey.json` | State file / 状态文件路径 |
+| `providerRoute` | `opencode-go` | Provider route (under `llm-pi-ai.providers`) to inject Multikey models into / 注入 Multikey 模型的供应商路由 |
+| `proxyBaseURL` | `http://127.0.0.1:{listenPort}` | Proxy base URL pinned onto the route / 写入供应商 baseURL 的本地代理地址 |
+| `injectProvider` | `true` | Auto-write baseURL + Multikey models into llm-pi-ai settings on load / 启动时自动写入供应商配置 |
+| `multikeySuffix` | `" (Multikey)"` | Suffix appended to injected model ids / 注入模型 id 的后缀 |
 
 Example / 示例:
 
@@ -207,13 +224,21 @@ All endpoints accept only loopback requests (`127.0.0.1` / `::1`, Host header ch
 
 ## Usage accounting / 用量统计口径
 
-- The proxy captures `usage` from each response: OpenAI `prompt_tokens / completion_tokens /
-  total_tokens`, OpenAI Responses `input_tokens / output_tokens / input_tokens_details.cached_tokens`,
-  Anthropic `input_tokens / output_tokens / cache_read_input_tokens / cache_creation_input_tokens`.
-- SSE responses parse `data:` lines while streaming and merge by per-field maximum (OpenAI returns the
-  cumulative total at the end; Anthropic reports input at `message_start` and output at `message_delta`).
-- Cost uses the opencode-go catalog rates ($ per 1M tokens): `minimax-m3` 0.3/1.2, `qwen3.7-max`
-  2.5/7.5, `qwen3.7-plus` 0.4/1.6 (input/output). Unknown models report no cost.
+The plugin no longer renders usage itself. The proxy **forwards the upstream `usage`
+unmodified**, so DSH's own token meter records each call and **dsh-usage-stats** displays the
+pooled usage per `（Multikey）` model. To do so the proxy understands every usage shape while
+streaming: OpenAI `prompt_tokens / completion_tokens / total_tokens`, OpenAI Responses
+`input_tokens / output_tokens / input_tokens_details.cached_tokens`, Anthropic
+`input_tokens / output_tokens / cache_read_input_tokens / cache_creation_input_tokens`.
+
+- SSE responses parse `data:` lines and merge per-field maximum (OpenAI returns the cumulative
+  total at the end; Anthropic reports input at `message_start` and output at `message_delta`).
+- A `（Multikey）` model id is normalized to its base model before forwarding, so usage is
+  attributed to that base model (and dsh-usage-stats groups it under the `（Multikey）` model id
+  DSH actually called).
+
+> **中文**：本插件不再自绘用量。代理原样透传上游 `usage`，由 DSH 自带的 token meter 计费，
+> dsh-usage-stats 按（Multikey）模型展示池用量。
 
 ---
 

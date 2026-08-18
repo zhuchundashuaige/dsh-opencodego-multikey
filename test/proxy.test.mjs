@@ -8,11 +8,22 @@ import {
 	createProxyServer,
 	filteredResponseHeaders,
 	forwardHeaders,
-	mergeUsage
+	mergeUsage,
+	normalizeMultikeyModel
 } from "../lib/proxy.js";
 import { joinUrl } from "../lib/quota.js";
 import { KeyPool, keyIdOf } from "../lib/keys.js";
 import { createKeyStats } from "../lib/stats.js";
+
+test("normalizeMultikeyModel strips the (Multikey) suffix", () => {
+	assert.equal(normalizeMultikeyModel("minimax-m3 (Multikey)"), "minimax-m3");
+	assert.equal(normalizeMultikeyModel("qwen3.7-max (Multikey)"), "qwen3.7-max");
+	// No suffix → unchanged return null (caller keeps original).
+	assert.equal(normalizeMultikeyModel("minimax-m3"), null);
+	assert.equal(normalizeMultikeyModel(""), null);
+	// Custom suffix.
+	assert.equal(normalizeMultikeyModel("glm-5.2 (Pool)", " (Pool)"), "glm-5.2");
+});
 
 test("forwardHeaders strips hop-by-hop and connection headers", () => {
 	const out = forwardHeaders({
